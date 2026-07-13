@@ -76,16 +76,46 @@ app.post('/api/scores', async (req, res) => {
   try {
     const { userId, moves, timeInSeconds, difficulty, category } = req.body;
 
-    if (!userId || !moves || !timeInSeconds || !difficulty || !category) {
-      return res.status(400).json({ message: "جميع بيانات الجولة مطلوبة للحفظ" });
+    // 1. البحث عن سكور سابق لنفس اللاعب في نفس مستوى الصعوبة
+    let existingScore = await Score.findOne({ userId, difficulty });
+
+    if (existingScore) {
+      // 2. 🧐 مقارنة النتيجة الجديدة بالقديمة (الأفضل هو الأقل محاولات)
+      // إذا تساوت المحاولات، نقارن بالوقت (الأسرع هو الأفضل)
+      const isNewRecord = 
+        moves < existingScore.moves || 
+        (moves === existingScore.moves && timeInSeconds < existingScore.timeInSeconds);
+
+      if (isNewRecord) {
+        // تحديث السكور القديم بالرقم القياسي الجديد المتطور
+        existingScore.moves = moves;
+        existingScore.timeInSeconds = timeInSeconds;
+        existingScore.category = category; // لتحديث الثيم إذا تغير
+        await existingScore.save();
+        
+        return res.status(200).json({ message: "🔥 تهانينا! تم تحطيم رقمك القياسي وتحديث الصدارة!" });
+      } else {
+        // إذا كانت اللعبة الحالية أسوأ أو مساوية للقديمة، لا نغير شيئاً
+        return res.status(200).json({ message: "لعبت جيداً، لكنك لم تتخطى رقمك القياسي الحالي." });
+      }
+
+    } else {
+      // 3. ✨ إذا كان اللاعب يلعب هذا المستوى لأول مرة، ننشئ له سكور جديد
+      const newScore = new Score({
+        userId,
+        moves,
+        timeInSeconds,
+        difficulty,
+        category
+      });
+      await newScore.save();
+      
+      return res.status(201).json({ message: "🏆 تم تسجيل أول رقم قياسي لك في هذا المستوى!" });
     }
 
-    const newScore = new Score({ userId, moves, timeInSeconds, difficulty, category });
-    await newScore.save();
-
-    res.status(201).json({ message: "تم تسجيل السكور وحفظه في لوحة الأبطال! 🥇", score: newScore });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("خطأ أثناء حفظ/تحديث النتيجة:", error);
+    res.status(500).json({ message: "حدث خطأ في السيرفر أثناء معالجة النتيجة." });
   }
 });
 
@@ -98,7 +128,7 @@ app.get('/api/leaderboard', async (req, res) => {
     const topScores = await Score.find({ difficulty })
       .populate('userId', 'username') // لدمج اسم المستخدم من جدول الـ User بدلاً من الـ ID فقط
       .sort({ moves: 1, timeInSeconds: 1 }) // الترتيب تصاعدياً: الأقل في المحاولات أولاً، ثم الأقل في الوقت
-      .limit(10); // جلب أعلى 10 لاعبين فقط
+      .limit(5); // جلب أعلى 5 لاعبين فقط
 
     // تعديل شكل البيانات لتسهيل قراءتها في الفرونت إند
     const formattedLeaderboard = topScores.map((score, index) => ({
@@ -119,5 +149,5 @@ app.get('/api/leaderboard', async (req, res) => {
 // تشغيل السيرفر
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`السيرفر يعمل الآن على المنفذ: http://localhost:${PORT}`);
+  console.log(`Server is running on port: http://localhost:${PORT}`);
 });
