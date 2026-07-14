@@ -46,9 +46,13 @@ app.post('/api/auth/check', async (req, res) => {
 // --- 🔑 2. ENDPOINT: تسجيل الدخول أو إنشاء حساب جديد ---
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { username, pin } = req.body;
+    let { username, pin } = req.body;
     if (!username || !pin) return res.status(400).json({ message: "جميع الحقول مطلوبة" });
 
+    // تنظيف الاسم من المسافات الزائدة في البداية والنهاية
+    username = username.trim();
+
+    // البحث عن الاسم بعد تنظيفه
     let user = await User.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
 
     if (user) {
